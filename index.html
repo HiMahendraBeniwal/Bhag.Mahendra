@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bhag Mahendra - Futuristic Runner</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #000; 
+            font-family: 'Orbitron', sans-serif;
+        }
+        #start-screen {
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8); 
+            display: flex; 
+            justify-content: center;
+            align-items: center; 
+            flex-direction: column; 
+            color: #00ff00;
+            z-index: 100;
+        }
+        #start-button {
+            padding: 15px 30px; 
+            font-size: 20px; 
+            cursor: pointer;
+            background: #000; 
+            border: 2px solid #00ff00; 
+            color: #00ff00; 
+            border-radius: 5px;
+            font-family: 'Orbitron', sans-serif;
+            transition: all 0.3s ease;
+        }
+        #start-button:hover { 
+            background: #00ff00; 
+            color: #000;
+            box-shadow: 0 0 15px #00ff00;
+        }
+        .hud-text {
+            position: absolute; 
+            color: #00ff00;
+            text-shadow: 0 0 5px #00ff00;
+            font-size: 18px;
+            z-index: 10;
+        }
+        #score { 
+            left: 10px; 
+            top: 10px;
+        }
+        #speed { 
+            right: 10px; 
+            top: 10px;
+        }
+        #fuel-container {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 200px;
+            height: 20px;
+            background: #111;
+            border: 2px solid #00ff00;
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 10;
+        }
+        #fuel-level {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #00ff00, #00ffaa);
+            transition: width 0.3s;
+        }
+        #fuel-text {
+            position: absolute;
+            top: 35px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00ff00;
+            text-shadow: 0 0 5px #00ff00;
+            font-size: 14px;
+            z-index: 10;
+        }
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: #ff0000;
+            z-index: 100;
+        }
+        #restart-button {
+            padding: 15px 30px;
+            font-size: 20px;
+            cursor: pointer;
+            background: #000;
+            border: 2px solid #ff0000;
+            color: #ff0000;
+            border-radius: 5px;
+            font-family: 'Orbitron', sans-serif;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+        #restart-button:hover {
+            background: #ff0000;
+            color: #000;
+            box-shadow: 0 0 15px #ff0000;
+        }
+    </style>
+</head>
+<body>
+    <div id="start-screen">
+        <h1>BHAG MAHENDRA</h1>
+        <p>Use arrow keys or swipe to move left and right.</p>
+        <p>Collect fuel cans to keep running!</p>
+        <button id="start-button">START GAME</button>
+    </div>
+    
+    <div id="score" class="hud-text">SCORE: 0</div>
+    <div id="speed" class="hud-text">SPEED: 10.0</div>
+    <div id="fuel-container"><div id="fuel-level"></div></div>
+    <div id="fuel-text">FUEL</div>
+    
+    <div id="game-over">
+        <h2>GAME OVER</h2>
+        <p id="final-score">SCORE: 0</p>
+        <button id="restart-button">RESTART</button>
+    </div>
+    
+    <div id="game-canvas"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script>
+        // Game variables
+        let scene, camera, renderer, character, ground, trail;
+        let obstacles = [], powerUps = [], fuelCans = [];
+        let gameOver = true, score = 0;
+        let characterSpeed = 10, baseSpeed = 10;
+        let farthestZ = 0, lastTime = performance.now();
+        let fuel = 100;
+        let isBoosted = false;
+        let trailPositions = [];
+        
+        // Control variables
+        const keys = {};
+        let touchStartX = 0, touchEndX = 0;
+        
+        // Initialize the game
+        init();
+        
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x000033, 0, 100);
+            
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 15);
+            
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('game-canvas').appendChild(renderer.domElement);
+            
+            // Ground
+            const groundGeometry = new THREE.PlaneGeometry(10, 10000);
+            const groundMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x222244,
+                wireframe: false,
+                shininess: 80
+            });
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            scene.add(ground);
+            
+            // Add grid lines to ground
+            const gridHelper = new THREE.GridHelper(10, 20, 0x00ff00, 0x003300);
+            gridHelper.position.y = 0.01;
+            scene.add(gridHelper);
+            
+            // Character
+            const characterGeometry = new THREE.BoxGeometry(1, 1, 2);
+            const characterMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x00ff00,
+                emissive: 0x003300,
+                shininess: 100
+            });
+            character = new THREE.Mesh(characterGeometry, characterMaterial);
+            character.position.y = 0.5;
+            character.castShadow = true;
+            scene.add(character);
+            
+            // Character light
+            const characterLight = new THREE.PointLight(0x00ff00, 1, 5);
+            character.add(characterLight);
+            
+            // Trail
+            const trailMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00ff00,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.7
+            });
+            const trailGeometry = new THREE.BufferGeometry();
+            trail = new THREE.Line(trailGeometry, trailMaterial);
+            scene.add(trail);
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x222244, 0.5);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(0, 10, 10);
+            scene.add(directionalLight);
+            
+            // Add some spotlights for dramatic effect
+            const spotlight1 = new THREE.SpotLight(0x00ffaa, 1, 50, Math.PI/4, 0.5);
+            spotlight1.position.set(-5, 10, -20);
+            scene.add(spotlight1);
+            
+            const spotlight2 = new THREE.SpotLight(0x00ffaa, 1, 50, Math.PI/4, 0.5);
+            spotlight2.position.set(5, 10, -40);
+            scene.add(spotlight2);
+            
+            // Drones
+            const droneGroup = new THREE.Group();
+            for (let i = 0; i < 10; i++) {
+                const droneGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+                const droneMaterial = new THREE.MeshPhongMaterial({ 
+                    color: 0xaaaaaa,
+                    emissive: 0x222222
+                });
+                const drone = new THREE.Mesh(droneGeometry, droneMaterial);
+                drone.position.set((Math.random() - 0.5) * 20, Math.random() * 5 + 2, -100 - Math.random() * 100);
+                droneGroup.add(drone);
+            }
+            scene.add(droneGroup);
+            
+            // Event listeners
+            document.getElementById('start-button').addEventListener('click', startGame);
+            document.getElementById('restart-button').addEventListener('click', startGame);
+            window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+            window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+            window.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+            window.addEventListener('touchmove', (e) => { touchEndX = e.touches[0].clientX; });
+            window.addEventListener('touchend', handleSwipe);
+            window.addEventListener('resize', onWindowResize);
+            
+            // Start animation loop
+            animate();
+        }
+        
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('game-over').style.display = 'none';
+            gameOver = false;
+            score = 0;
+            fuel = 100;
+            characterSpeed = baseSpeed;
+            character.position.set(0, 0.5, 0);
+            
+            // Clear existing game elements
+            obstacles.forEach(obstacle => scene.remove(obstacle));
+            powerUps.forEach(powerUp => scene.remove(powerUp));
+            fuelCans.forEach(fuelCan => scene.remove(fuelCan));
+            obstacles = [];
+            powerUps = [];
+            fuelCans = [];
+            farthestZ = 0;
+            trailPositions = [];
+            
+            updateScore();
+            updateSpeedDisplay();
+            updateFuelDisplay();
+            lastTime = performance.now();
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (gameOver) {
+                renderer.render(scene, camera);
+                return;
+            }
+            
+            const currentTime = performance.now();
+            const deltaTime = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            
+            // Character movement
+            const lateralSpeed = 10;
+            if (keys.ArrowLeft && character.position.x > -4) {
+                character.position.x -= lateralSpeed * deltaTime;
+            }
+            if (keys.ArrowRight && character.position.x < 4) {
+                character.position.x += lateralSpeed * deltaTime;
+            }
+            character.position.z -= characterSpeed * deltaTime;
+            
+            // Update camera
+            camera.position.z = character.position.z + 15;
+            camera.lookAt(character.position);
+            
+            // Update trail
+            updateTrail();
+            
+            // Generate game elements
+            generateGameElements();
+            
+            // Check collisions
+            checkCollisions();
+            
+            // Update fuel
+            fuel -= deltaTime * 5; // Fuel decreases over time
+            updateFuelDisplay();
+            
+            if (fuel <= 0) {
+                endGame();
+                return;
+            }
+            
+            // Update score based on distance traveled
+            score += Math.floor(characterSpeed * deltaTime);
+            updateScore();
+            
+            // Update speed based on score
+            characterSpeed = baseSpeed + Math.floor(score / 500);
+            updateSpeedDisplay();
+            
+            renderer.render(scene, camera);
+        }
+        
+        function updateTrail() {
+            trailPositions.unshift(character.position.clone());
+            if (trailPositions.length > 20) {
+                trailPositions.pop();
+            }
+            
+            const positions = new Float32Array(trailPositions.length * 3);
+            trailPositions.forEach((pos, i) => {
+                positions[i * 3] = pos.x;
+                positions[i * 3 + 1] = pos.y;
+                positions[i * 3 + 2] = pos.z;
+            });
+            
+            trail.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            trail.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        function generateGameElements() {
+            while (farthestZ > character.position.z - 100) {
+                farthestZ -= 20;
+                
+                // Randomly decide what to generate
+                const rand = Math.random();
+                const x = Math.random() * 8 - 4;
+                
+                if (rand < 0.6) {
+                    generateObstacle(x, farthestZ);
+                } else if (rand < 0.8) {
+                    generatePowerUp(x, farthestZ);
+                } else {
+                    generateFuelCan(x, farthestZ);
+                }
+            }
+        }
+        
+        function generateObstacle(x, z) {
+            const obstacleGeometry = new THREE.BoxGeometry(1, 1, 1);
+            const obstacleMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xff0000,
+                emissive: 0x330000
+            });
+            const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+            obstacle.position.set(x, 0.5, z);
+            scene.add(obstacle);
+            obstacles.push(obstacle);
+        }
+        
+        function generatePowerUp(x, z) {
+            const powerUpGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const powerUpMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xffff00,
+                emissive: 0x333300,
+                shininess: 100
+            });
+            const powerUp = new THREE.Mesh(powerUpGeometry, powerUpMaterial);
+            powerUp.position.set(x, 0.5, z);
+            
+            // Add pulsing light to power-up
+            const powerUpLight = new THREE.PointLight(0xffff00, 1, 3);
+            powerUp.add(powerUpLight);
+            
+            scene.add(powerUp);
+            powerUps.push(powerUp);
+        }
+        
+        function generateFuelCan(x, z) {
+            const fuelCanGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.8, 8);
+            const fuelCanMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x0088ff,
+                emissive: 0x002244,
+                shininess: 100
+            });
+            const fuelCan = new THREE.Mesh(fuelCanGeometry, fuelCanMaterial);
+            fuelCan.position.set(x, 0.5, z);
+            
+            // Add light to fuel can
+            const fuelLight = new THREE.PointLight(0x0088ff, 1, 3);
+            fuelCan.add(fuelLight);
+            
+            scene.add(fuelCan);
+            fuelCans.push(fuelCan);
+        }
+        
+        function checkCollisions() {
+            const characterBox = new THREE.Box3().setFromObject(character);
+            
+            // Check obstacle collisions
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obstacle = obstacles[i];
+                const obstacleBox = new THREE.Box3().setFromObject(obstacle);
+                
+                if (characterBox.intersectsBox(obstacleBox)) {
+                    endGame();
+                    return;
+                }
+                
+                if (obstacle.position.z > character.position.z + 20) {
+                    scene.remove(obstacle);
+                    obstacles.splice(i, 1);
+                }
+            }
+            
+            // Check power-up collisions
+            for (let i = powerUps.length - 1; i >= 0; i--) {
+                const powerUp = powerUps[i];
+                const powerUpBox = new THREE.Box3().setFromObject(powerUp);
+                
+                if (characterBox.intersectsBox(powerUpBox)) {
+                    activatePowerUp();
+                    scene.remove(powerUp);
+                    powerUps.splice(i, 1);
+                    score += 50;
+                    updateScore();
+                }
+                
+                if (powerUp.position.z > character.position.z + 20) {
+                    scene.remove(powerUp);
+                    powerUps.splice(i, 1);
+                }
+            }
+            
+            // Check fuel can collisions
+            for (let i = fuelCans.length - 1; i >= 0; i--) {
+                const fuelCan = fuelCans[i];
+                const fuelCanBox = new THREE.Box3().setFromObject(fuelCan);
+                
+                if (characterBox.intersectsBox(fuelCanBox)) {
+                    fuel = Math.min(fuel + 30, 100);
+                    updateFuelDisplay();
+                    scene.remove(fuelCan);
+                    fuelCans.splice(i, 1);
+                    score += 20;
+                    updateScore();
+                }
+                
+                if (fuelCan.position.z > character.position.z + 20) {
+                    scene.remove(fuelCan);
+                    fuelCans.splice(i, 1);
+                }
+            }
+        }
+        
+        function activatePowerUp() {
+            characterSpeed *= 1.5;
+            isBoosted = true;
+            
+            // Change trail color during boost
+            trail.material.
+                color.setHex(0xffff00);
+            setTimeout(() => {
+                characterSpeed /= 1.5;
+                isBoosted = false;
+                
+                // Change trail color back to green
+                trail.material.color.setHex(0x00ff00);
+            }, 5000);
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('game-over').style.display = 'flex';
+            document.getElementById('final-score').textContent = `SCORE: ${score}`;
+        }
+
+        function updateScore() {
+            document.getElementById('score').textContent = `SCORE: ${score}`;
+        }
+
+        function updateSpeedDisplay() {
+            document.getElementById('speed').textContent = `SPEED: ${characterSpeed.toFixed(1)}`;
+        }
+
+        function updateFuelDisplay() {
+            document.getElementById('fuel-level').style.width = `${fuel}%`;
+        }
+
+        function handleSwipe() {
+            const swipeDistance = touchEndX - touchStartX;
+            if (swipeDistance > 50) {
+                keys.ArrowRight = true;
+                setTimeout(() => { keys.ArrowRight = false; }, 100);
+            } else if (swipeDistance < -50) {
+                keys.ArrowLeft = true;
+                setTimeout(() => { keys.ArrowLeft = false; }, 100);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
